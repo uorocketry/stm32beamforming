@@ -35,7 +35,8 @@ typedef enum firmware_fault {
     FIRMWARE_FAULT_PHASE_SPI_TIMEOUT = 7,
     FIRMWARE_FAULT_PHASE_SPI_ERROR = 8,
     FIRMWARE_FAULT_HARD_FAULT = 9,
-    FIRMWARE_FAULT_UNEXPECTED_INTERRUPT = 10
+    FIRMWARE_FAULT_UNEXPECTED_INTERRUPT = 10,
+    FIRMWARE_FAULT_CAN_INIT = 11
 } firmware_fault_t;
 
 typedef struct diagnostic_record {

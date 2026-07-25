@@ -14,6 +14,9 @@
 #define VGA_ATTENUATION_SHIFT 2u
 
 uint16_t beamforming_reverse_bits(uint16_t word, uint8_t bit_count);
+bool phase_state_from_millidegrees(
+    uint32_t requested_shift_millidegrees,
+    uint8_t *phase_state);
 bool phase_command_from_state(uint8_t phase_state, uint8_t unit_address, uint16_t *command);
 bool phase_command_from_millidegrees(
     uint32_t requested_shift_millidegrees,

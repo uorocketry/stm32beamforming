@@ -2,6 +2,13 @@ app/build/
 app/generated.*.ld
 tests/test_protocol
 tests/test_diagnostics
+tests/test_can_protocol
+tests/test_can_queue
+tests/test_can_control
+tests/test_can_filter
+tests/test_build_info
+__pycache__/
+*.pyc
 *.o
 *.elf
 *.bin

@@ -1,0 +1,15 @@
+#ifndef FIRMWARE_CONFIG_H
+#define FIRMWARE_CONFIG_H
+
+#ifndef BEAMFORMER_NODE_ID
+#define BEAMFORMER_NODE_ID 1
+#endif
+
+#if BEAMFORMER_NODE_ID < 1 || BEAMFORMER_NODE_ID > 30
+#error "BEAMFORMER_NODE_ID must be in the range 1..30"
+#endif
+
+#define CAN_BUS_BITRATE 500000u
+#define CAN_TIME_QUANTA_PER_BIT 16u
+
+#endif

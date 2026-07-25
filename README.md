@@ -1,6 +1,6 @@
 # STM32 Beamforming Firmware
 
-Bare-metal C firmware for the STM32F072R8T6 receiver controller. The project uses libopencm3 and controls a PE44820 phase shifter and an F0480 variable-gain amplifier over separate write-only SPI buses.
+Bare-metal C firmware for an STM32F072R8T6 receiver-chain controller. The project uses libopencm3 to control a PE44820 phase shifter, an F0480 variable-gain amplifier, and a multi-node classic CAN bus.
 
 ## Current behavior
 
@@ -12,9 +12,10 @@ At startup the firmware:
 4. Initializes the VGA and phase-shifter interfaces.
 5. Programs the VGA to 23 dB maximum attenuation.
 6. Programs phase-shifter address `3` to the nearest state for `205.3°`.
-7. Records the applied commands and enters a watchdog-serviced idle loop.
+7. Initializes CAN1 at 500 kbit/s for the compiled receiver node ID.
+8. Records the applied commands and enters an interrupt-driven, watchdog-serviced CAN command loop.
 
-After three consecutive incomplete boots of the same firmware build, the controller enters a retained safe lockout. In lockout it applies maximum attenuation and phase state zero, then remains in the watchdog-serviced idle loop.
+After three consecutive incomplete boots of the same firmware build, the controller enters a retained safe lockout. In lockout it applies maximum attenuation and phase state zero, answers unicast status requests, and rejects output-changing commands other than the idempotent safe command.
 
 ## Safety and correctness properties
 
@@ -24,6 +25,12 @@ After three consecutive incomplete boots of the same firmware build, the control
 - Phase commands are restricted to the 13-bit frame width.
 - F0480 attenuation accepts every whole-decibel setting from 0 through 23 dB.
 - VGA maximum attenuation is applied before the phase command.
+- Phase updates temporarily apply maximum attenuation and then restore the requested or previous attenuation.
+- Receiver boards accept output commands only from controller node `0`.
+- Broadcast commands never generate acknowledgements, preventing response storms.
+- CAN hardware filters accept only extended data frames addressed to the local node or broadcast.
+- The CAN ISR drains the three-frame hardware FIFO into an eight-frame single-producer/single-consumer queue.
+- CAN payload parsing, destination handling, response construction, filter encoding, queue behavior, and output ordering have native host tests.
 - SPI TXE and BSY waits have millisecond and iteration limits.
 - A transfer that times out before writing leaves the control line idle. A timeout after writing begins keeps LE/CS asserted so incomplete shift-register data is not deliberately latched before reset.
 - HSE, PLL, and HSI48 startup waits are bounded.
@@ -64,6 +71,15 @@ SPI2 uses mode 0, a 13-bit frame, and a 3 MHz clock at the 48 MHz peripheral clo
 
 SPI1 uses mode 0, eight-bit transfers, logical LSB-first data, and a 3 MHz clock.
 
+### CAN
+
+| Signal | MCU pin |
+|---|---:|
+| CAN1 RX | PA11, AF4 |
+| CAN1 TX | PA12, AF4 |
+
+CAN1 uses classic CAN 2.0B extended frames at 500 kbit/s through an external 3.3 V transceiver. The tested protocol supports controller node `0`, receiver nodes `1..30`, and broadcast destination `31`. See [`docs/CAN_PROTOCOL.md`](docs/CAN_PROTOCOL.md) for the identifier layout, payloads, responses, and Raspberry Pi SocketCAN procedure.
+
 ## Clone
 
 ```bash
@@ -94,6 +110,7 @@ Run the hardware-independent tests:
 
 ```bash
 make -C tests clean test
+python3 tests/test_can_smoke_tool.py
 ```
 
 Run the complete local quality gate when all dependencies are installed:
@@ -106,9 +123,11 @@ Build libopencm3 and the firmware:
 
 ```bash
 make -C libopencm3 TARGETS=stm32/f0
-make -C app clean all
+make -C app clean all CAN_NODE_ID=1
 arm-none-eabi-size app/build/stm32beamforming.elf
 ```
+
+`CAN_NODE_ID` must be in the range `1..30`. Build a distinct image for each receiver board. GitHub CI produces ready-to-flash images for nodes 1, 2, and 3.
 
 Generated output is written under `app/build/`:
 
@@ -125,9 +144,10 @@ The generated device linker script is intentionally not tracked.
 
 - checks out all submodules;
 - installs the ARM GNU toolchain;
-- runs the host protocol and diagnostic tests;
+- runs the host phase/VGA, diagnostic, CAN protocol, queue, filter, output-order, and SocketCAN-tool tests;
+- repeats all native C tests under AddressSanitizer and UndefinedBehaviorSanitizer;
 - runs cppcheck warning, style, performance, and portability analysis;
-- builds libopencm3 and the STM32F072 firmware;
+- builds libopencm3 and STM32F072 firmware images for receiver nodes 1, 2, and 3;
 - treats all firmware warnings as errors;
 - records the image size; and
 - uploads the ELF, BIN, MAP, and size report.
@@ -146,13 +166,19 @@ The exported `FIRMWARE_DIAGNOSTICS` symbol is stored in the linker script's `.no
 - last phase-shifter command; and
 - last VGA command.
 
-The exported `firmware_revision` string contains the Git revision supplied by the build. SRAM retention is best effort: power loss can erase the record, and corruption is rejected by its checksum.
+The exported `firmware_revision` string contains the Git revision supplied by the build, and `firmware_node_id` contains the compiled receiver ID. The retained build identity hashes both values, so flashing a different node image does not inherit the previous image's incomplete-boot lockout streak. SRAM retention is best effort: power loss can erase the record, and corruption is rejected by its checksum.
 
 ## Repository structure
 
 ```text
 app/include/beamforming_protocol.h  Hardware-independent command API
 app/src/beamforming_protocol.c      PE44820 and F0480 command encoding
+app/src/can_protocol.c              Versioned CAN identifier and payload codec
+app/src/can_filter.c                Tested bxCAN acceptance-filter encoding
+app/src/can_queue.c                 ISR-to-main receive queue
+app/src/can_control.c               Tested safe hardware-operation planning
+app/src/can_bus.c                   CAN1 pins, timing, filters, ISR, and transport
+app/src/can_runtime.c               Command execution, ACK/ERROR, and status service
 app/src/diagnostic_record.c         Tested retained-state logic
 app/src/diagnostics.c                STM32 .noinit storage adapter
 app/src/clock_control.c              Bounded clock setup and fallback
@@ -162,6 +188,7 @@ app/src/vga.c                        SPI1 VGA driver
 app/src/faults.c                     Reset-on-fault handlers
 app/src/main.c                       Safe startup sequence
 tests/                               Native C17 tests
+tools/can_smoke_test.py              Dependency-free Raspberry Pi SocketCAN client
 ```
 
-The current firmware performs a fixed startup configuration. CAN and UART command processing should be added incrementally on top of this verified baseline rather than merged from unfinished development branches.
+This repository intentionally contains only per-board firmware. Beam steering, multi-board coordination, calibration strategy, and higher-level control algorithms should live in a separate controller repository that communicates through the documented CAN protocol.

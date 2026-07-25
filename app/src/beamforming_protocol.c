@@ -29,20 +29,31 @@ bool phase_command_from_state(uint8_t phase_state, uint8_t unit_address, uint16_
     return true;
 }
 
-bool phase_command_from_millidegrees(
+bool phase_state_from_millidegrees(
     uint32_t requested_shift_millidegrees,
-    uint8_t unit_address,
-    uint16_t *command)
+    uint8_t *phase_state)
 {
-    if (requested_shift_millidegrees > PHASE_FULL_TURN_MILLIDEGREES) {
+    if (phase_state == NULL
+        || requested_shift_millidegrees > PHASE_FULL_TURN_MILLIDEGREES) {
         return false;
     }
 
     const uint64_t scaled =
         ((uint64_t)requested_shift_millidegrees * PHASE_STATE_COUNT)
         + (PHASE_FULL_TURN_MILLIDEGREES / 2u);
-    const uint8_t phase_state =
-        (uint8_t)((scaled / PHASE_FULL_TURN_MILLIDEGREES) & 0xffu);
+    *phase_state = (uint8_t)((scaled / PHASE_FULL_TURN_MILLIDEGREES) & 0xffu);
+    return true;
+}
+
+bool phase_command_from_millidegrees(
+    uint32_t requested_shift_millidegrees,
+    uint8_t unit_address,
+    uint16_t *command)
+{
+    uint8_t phase_state = 0u;
+    if (!phase_state_from_millidegrees(requested_shift_millidegrees, &phase_state)) {
+        return false;
+    }
 
     return phase_command_from_state(phase_state, unit_address, command);
 }

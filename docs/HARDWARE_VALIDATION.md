@@ -6,7 +6,7 @@ Complete this checklist for every PCB revision and every release artifact before
 
 - [ ] Populated MCU marking confirms STM32F072R8T6.
 - [ ] Schematic and PCB revision are recorded.
-- [ ] Firmware revision and ELF SHA-256 are recorded.
+- [ ] Firmware revision, compiled CAN node ID, and ELF SHA-256 are recorded.
 - [ ] Power rails and logic levels match all connected devices.
 - [ ] External pull resistors establish documented RF-safe reset states.
 
@@ -58,6 +58,28 @@ Capture LE, SCK, data, and serial-programming select.
 - [ ] Measured RF phase agrees with the requested state over all 256 states or an approved sampling plan.
 - [ ] A forced pre-write timeout leaves LE high.
 - [ ] A forced in-flight timeout does not intentionally latch partial data before reset.
+
+## CAN network
+
+Use the exact node-specific CI artifacts and the procedure in [`CAN_PROTOCOL.md`](CAN_PROTOCOL.md).
+
+- [ ] CAN1 RX is PA11/AF4 and CAN1 TX is PA12/AF4 on the tested board revision.
+- [ ] The external transceiver is compatible with the board's 3.3 V logic and bus voltage.
+- [ ] CANH, CANL, and common ground are verified against the actual connector pinout.
+- [ ] Exactly two 120 Ω terminators are installed at the physical ends of the test bus.
+- [ ] Measured bitrate is 500 kbit/s with the expected sample point.
+- [ ] Nodes 1, 2, and 3 each answer a unicast ping with their own node ID.
+- [ ] Each node ignores unicast frames addressed to the other two nodes.
+- [ ] Standard-ID and remote frames do not reach the application queue.
+- [ ] A unicast valid command receives a sequence-matched ACK.
+- [ ] A unicast invalid length or value receives a sequence-matched ERROR.
+- [ ] A broadcast safe command changes all nodes and produces no responses.
+- [ ] Combined commands apply 23 dB attenuation before the phase transition and apply the requested final attenuation afterward.
+- [ ] Receive-queue overflow can be induced in a controlled test and appears in STATUS health flags.
+- [ ] Transmit-mailbox exhaustion can be induced in a controlled test and appears in STATUS health flags.
+- [ ] Disconnecting the bus produces bus-off where expected and automatic recovery after reconnection.
+- [ ] The Raspberry Pi SocketCAN tool completes repeated ping, phase, VGA, combined, and safe cycles without unexpected timeouts.
+- [ ] RJ11 and RJ45 harnesses are separately documented; no connector pinout is inferred from connector type alone.
 
 ## Fault injection
 

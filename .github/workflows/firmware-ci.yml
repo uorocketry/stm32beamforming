@@ -31,7 +31,11 @@ jobs:
             python3
 
       - name: Run host protocol tests
-        run: make -C tests clean test
+        run: |
+          make -C tests clean test
+          make -C tests clean test \
+            CFLAGS="-std=c17 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+          python3 tests/test_can_smoke_tool.py
 
       - name: Run C static analysis
         run: |
@@ -41,19 +45,33 @@ jobs:
             --std=c17 \
             --suppress=missingIncludeSystem \
             --suppress=unusedFunction \
-            -DSTM32F0 -DSTM32F072R8T6 \
+            -DSTM32F0 -DSTM32F072R8T6 -DBEAMFORMER_NODE_ID=1 \
             -Iapp/include -Ilibopencm3/include \
             app/src
 
       - name: Build libopencm3 for STM32F0
         run: make -C libopencm3 TARGETS=stm32/f0 -j2
 
-      - name: Build firmware
+      - name: Build firmware for three receiver nodes
         run: |
-          make -C app clean
-          make -C app all -j2 GIT_REVISION="${GITHUB_SHA}"
-          arm-none-eabi-size app/build/stm32beamforming.elf \
-            | tee app/build/stm32beamforming.size.txt
+          artifact_root="${RUNNER_TEMP}/stm32beamforming"
+          mkdir -p "${artifact_root}"
+          for node_id in 1 2 3; do
+            make -C app clean
+            make -C app all -j2 \
+              GIT_REVISION="${GITHUB_SHA}" \
+              CAN_NODE_ID="${node_id}"
+            node_dir="${artifact_root}/node-${node_id}"
+            mkdir -p "${node_dir}"
+            cp app/build/stm32beamforming.elf \
+              "${node_dir}/stm32beamforming-node-${node_id}.elf"
+            cp app/build/stm32beamforming.bin \
+              "${node_dir}/stm32beamforming-node-${node_id}.bin"
+            cp app/build/stm32beamforming.map \
+              "${node_dir}/stm32beamforming-node-${node_id}.map"
+            arm-none-eabi-size app/build/stm32beamforming.elf \
+              | tee "${node_dir}/stm32beamforming-node-${node_id}.size.txt"
+          done
 
       - name: Verify generated files are ignored
         run: git diff --exit-code
@@ -61,11 +79,7 @@ jobs:
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: stm32beamforming-${{ github.sha }}
-          path: |
-            app/build/stm32beamforming.elf
-            app/build/stm32beamforming.bin
-            app/build/stm32beamforming.map
-            app/build/stm32beamforming.size.txt
+          name: stm32beamforming-nodes-1-3-${{ github.sha }}
+          path: ${{ runner.temp }}/stm32beamforming
           if-no-files-found: error
           retention-days: 30

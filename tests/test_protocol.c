@@ -7,6 +7,10 @@
 
 static void test_known_phase_command(void)
 {
+    uint8_t state = 0u;
+    assert(phase_state_from_millidegrees(205300u, &state));
+    assert(state == 146u);
+
     uint16_t command = 0;
     assert(phase_command_from_millidegrees(205300u, 3u, &command));
     assert(command == 0x092cu);
@@ -25,6 +29,12 @@ static void test_phase_boundaries(void)
     assert(!phase_command_from_millidegrees(360001u, 3u, &command));
     assert(!phase_command_from_millidegrees(0u, 16u, &command));
     assert(!phase_command_from_millidegrees(0u, 0u, NULL));
+
+    uint8_t state = 0xffu;
+    assert(phase_state_from_millidegrees(360000u, &state));
+    assert(state == 0u);
+    assert(!phase_state_from_millidegrees(360001u, &state));
+    assert(!phase_state_from_millidegrees(0u, NULL));
 }
 
 static void test_every_phase_state(void)

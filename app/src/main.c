@@ -2,9 +2,11 @@
 #include "Vga.h"
 #include "beamforming_protocol.h"
 #include "build_info.h"
+#include "can_runtime.h"
 #include "clock_control.h"
 #include "diagnostics.h"
 #include "faults.h"
+#include "firmware_config.h"
 #include "timebase.h"
 #include "watchdog.h"
 
@@ -35,11 +37,31 @@ static firmware_fault_t phase_fault_from_status(spi_guard_status_t status)
         : FIRMWARE_FAULT_PHASE_SPI_ERROR;
 }
 
-static void service_forever(void)
+static void service_without_can(void) __attribute__((noreturn));
+
+static void service_without_can(void)
 {
     while (1) {
         watchdog_service();
         __asm__ volatile("wfi");
+    }
+}
+
+static void service_runtime(can_runtime_t *runtime) __attribute__((noreturn));
+
+static void service_runtime(can_runtime_t *runtime)
+{
+    while (1) {
+        bool processed_frame = false;
+        while (can_runtime_service_next(runtime)) {
+            processed_frame = true;
+            watchdog_service();
+        }
+
+        watchdog_service();
+        if (!processed_frame) {
+            __asm__ volatile("wfi");
+        }
     }
 }
 
@@ -72,9 +94,11 @@ int main(void)
     const uint32_t requested_phase = safe_lockout
         ? SAFE_PHASE_MILLIDEGREES
         : OPERATIONAL_PHASE_MILLIDEGREES;
+    uint8_t phase_state = 0u;
     uint16_t phase_command = 0u;
-    if (!phase_command_from_millidegrees(
-            requested_phase,
+    if (!phase_state_from_millidegrees(requested_phase, &phase_state)
+        || !phase_command_from_state(
+            phase_state,
             PHASE_SHIFTER_ADDRESS,
             &phase_command)) {
         firmware_fail(FIRMWARE_FAULT_PHASE_COMMAND);
@@ -93,11 +117,33 @@ int main(void)
         firmware_fail(phase_fault_from_status(status));
     }
 
-    if (safe_lockout) {
-        diagnostics_set_state(FIRMWARE_STATE_SAFE_LOCKOUT);
-        service_forever();
+    const can_control_state_t initial_state = {
+        .phase_state = phase_state,
+        .phase_address = PHASE_SHIFTER_ADDRESS,
+        .attenuation_db = SAFE_VGA_ATTENUATION_DB,
+    };
+    can_runtime_t runtime = {0};
+    if (!can_runtime_start(
+            &runtime,
+            BEAMFORMER_NODE_ID,
+            clock_source,
+            safe_lockout,
+            &initial_state,
+            phase_command,
+            vga_command)) {
+        if (safe_lockout) {
+            diagnostics_set_fault(FIRMWARE_FAULT_CAN_INIT);
+            diagnostics_set_state(FIRMWARE_STATE_SAFE_LOCKOUT);
+            service_without_can();
+        }
+        firmware_fail(FIRMWARE_FAULT_CAN_INIT);
     }
 
-    diagnostics_mark_healthy();
-    service_forever();
+    if (safe_lockout) {
+        diagnostics_set_state(FIRMWARE_STATE_SAFE_LOCKOUT);
+    } else {
+        diagnostics_mark_healthy();
+    }
+
+    service_runtime(&runtime);
 }
