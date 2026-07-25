@@ -1,4 +1,11 @@
-build/
+app/build/
+app/generated.*.ld
+tests/test_protocol
+tests/test_diagnostics
 *.o
 *.elf
-libopencm3/
+*.bin
+*.map
+*.list
+*.lss
+*.su

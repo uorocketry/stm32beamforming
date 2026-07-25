@@ -1,0 +1,71 @@
+name: firmware-ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install ARM GNU toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            cppcheck \
+            gcc \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            make \
+            python3
+
+      - name: Run host protocol tests
+        run: make -C tests clean test
+
+      - name: Run C static analysis
+        run: |
+          cppcheck \
+            --enable=warning,style,performance,portability \
+            --error-exitcode=1 \
+            --std=c17 \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            -DSTM32F0 -DSTM32F072R8T6 \
+            -Iapp/include -Ilibopencm3/include \
+            app/src
+
+      - name: Build libopencm3 for STM32F0
+        run: make -C libopencm3 TARGETS=stm32/f0 -j2
+
+      - name: Build firmware
+        run: |
+          make -C app clean
+          make -C app all -j2 GIT_REVISION="${GITHUB_SHA}"
+          arm-none-eabi-size app/build/stm32beamforming.elf \
+            | tee app/build/stm32beamforming.size.txt
+
+      - name: Verify generated files are ignored
+        run: git diff --exit-code
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: stm32beamforming-${{ github.sha }}
+          path: |
+            app/build/stm32beamforming.elf
+            app/build/stm32beamforming.bin
+            app/build/stm32beamforming.map
+            app/build/stm32beamforming.size.txt
+          if-no-files-found: error
+          retention-days: 30
