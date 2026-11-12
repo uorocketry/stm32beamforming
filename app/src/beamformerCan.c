@@ -15,6 +15,7 @@
 
 volatile bool can_data_pending = false; 
 uint8_t can_data_rx[8];
+volatile uint32_t can_id_rx;
 
 
 typedef struct Can_Message_rx_global { 
@@ -64,19 +65,32 @@ void canSetUpClocks(void)
 void canSetUpAcceptanceFilters(CanTargetMcuMask_e canTargetMcuMaskSelf)
 {
     /*
-    beacuse we are only checking one bit and \
-    the bit is in the same position as the mask, 
-    (we aren't using a range), we use the 
-    self for the mask and the pattern we're masking
+    How the filter works (32-bit id/mask mode):
+    - mask: which bits of the incoming ID the hardware checks (1 = check, 0 = ignore)
+    - id: what those checked bits must be for the message to be accepted
+    We only check one bit, and want it to be 1, so the same value is used for both.
     */
 
-    //Bank 0: accept if this MCU's bit is set. 
-    const uint32_t self_filter_id   = (uint32_t)canTargetMcuMaskSelf;
-    const uint32_t self_filter_mask = (uint32_t)canTargetMcuMaskSelf;
+    /*
+    The filter registers don't store the ID starting at bit 0. Their layout is:
+        bits 31-3 = 29-bit extended ID, bit 2 = IDE, bit 1 = RTR, bit 0 = reserved
+    can_filter_id_mask_32bit_init writes our values straight into those registers,
+    so each ID bit has to be shifted left by 3 (CAN_RIxR_EXID_SHIFT) to line up.
+    (can_receive does the opposite, shifting right by 3, so the ID we get in the ISR is unshifted.)
+    Without the shift, MCU1's bit would land on the reserved bit 0 and never match.
+    */
 
+    const uint32_t self_bit_register_layout = (uint32_t)canTargetMcuMaskSelf << CAN_RIxR_EXID_SHIFT;
+    
+    //Bank 0: accept if this MCU's bit is set. 
+    const uint32_t self_filter_id   = (uint32_t)self_bit_register_layout;
+    const uint32_t self_filter_mask = (uint32_t)self_bit_register_layout;
+
+    const uint32_t common_bit_register_layout = (uint32_t)CAN_FILTER_COMMON_MASK << CAN_RIxR_EXID_SHIFT;
+    
     //Bank 1: accept if the common/all bit is set. 
-    const uint32_t common_filter_id   = (uint32_t)CAN_FILTER_COMMON_MASK;
-    const uint32_t common_filter_mask = (uint32_t)CAN_FILTER_COMMON_MASK;
+    const uint32_t common_filter_id   = (uint32_t)common_bit_register_layout;
+    const uint32_t common_filter_mask = (uint32_t)common_bit_register_layout;
 
     can_filter_id_mask_32bit_init(
         0,                  // filter bank 0 
@@ -110,13 +124,14 @@ void cec_can_isr(void)
             &unprocessedCanCmd.rtr,
             &unprocessedCanCmd.fmi,
             &unprocessedCanCmd.length,
-            &unprocessedCanCmd.data,
+            unprocessedCanCmd.data,
             NULL
         ); 
 
         //first clear can_data_rx
         memset(can_data_rx, 0, sizeof(can_data_rx));
-        memcpy(can_data_rx, unprocessedCanCmd.data, sizeof(unprocessedCanCmd.data)); 
+        memcpy(can_data_rx, unprocessedCanCmd.data, sizeof(unprocessedCanCmd.data));
+        can_id_rx = unprocessedCanCmd.id; 
         
         can_data_pending = true; //flag for main loop 
     }

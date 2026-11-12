@@ -11,6 +11,7 @@
 
 extern volatile bool can_data_pending;
 extern uint8_t can_data_rx[8];
+extern volatile uint32_t can_id_rx;
 
 typedef enum
 {
@@ -44,6 +45,15 @@ typedef enum
     CAN_FILTER_MCU28_MASK  = 0b01000000000000000000000000000,
     CAN_FILTER_COMMON_MASK = 0b10000000000000000000000000000
 } CanTargetMcuMask_e;
+
+#define CAN_CMD_TYPE_MASK 0b01100000000000000000000000000
+typedef enum
+{
+    CAN_CMD_PHASE_SHIFTERS = 0b00000000000000000000000000000,  // bits 27-26 = 00
+    CAN_CMD_VGA            = 0b00100000000000000000000000000,  // bits 27-26 = 01
+    CAN_CMD_COMBINED       = 0b01000000000000000000000000000,  // bits 27-26 = 10
+    CAN_CMD_RESERVED       = 0b01100000000000000000000000000   // bits 27-26 = 11
+} CanCommandId_e;
 
 // 29/3 = 9 MCUs we can target in one extended CAN frame
 // 29/4 = 7 MCUs we can target in one standard CAN frame

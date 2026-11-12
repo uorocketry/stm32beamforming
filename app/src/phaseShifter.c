@@ -16,7 +16,7 @@ uint16_t reverseBits(uint16_t word, uint8_t numBits)
     return reversed;
 }
 
-uint16_t MakePSCommand(phaseState_e stateword, uint8_t unitAddressWord)
+uint16_t MakePSCommand(optimizedPhaseState_e stateword, uint8_t unitAddressWord)
 {
     //[reversedStateWOrd][optBit][reversedAddress]
     
