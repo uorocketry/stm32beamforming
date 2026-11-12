@@ -63,7 +63,8 @@ int main(void)
         // Can message received and passed acceptance filters
         if (can_data_pending) {
             can_data_pending = false; //clear
-            process_host_cmd_can(can_data_rx);
+            process_host_cmd_can(can_data_rx, can_id_rx);
+
         }
         else if (uart_rx_data_pending) {
             uart_rx_data_pending = false;
