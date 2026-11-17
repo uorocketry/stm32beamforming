@@ -8,8 +8,6 @@
 #include <include/HostUart.h>
 #include <include/beamformerCan.h>
 
-extern volatile processedHostCmd_t processedHostCmd;
-extern uint8_t can_data_rx[8];
 
 /*
 Main function for processing uart host commands.
@@ -55,7 +53,10 @@ Example Format: ID.2:PS_IDX.1,6,7,8:ATT.1 //PS_IDXs map to phaseState_e enum ind
 -Attribute 3 : VGA attenuation level (0-23)
 
 */
-host_cmd_rc_e processExtractedCmdStr_Uart(char *extractedCmdLine,
+
+// Parses one UART command line and sends it to the chips.
+// static: only called by process_host_cmd_uart in this file.
+static host_cmd_rc_e processExtractedCmdStr_Uart(char *extractedCmdLine,
                                           processedHostCmd_t *processedHostCmd)
 {
     uint8_t parsedCommandId = 0u;
@@ -77,7 +78,7 @@ host_cmd_rc_e processExtractedCmdStr_Uart(char *extractedCmdLine,
          */
         uint8_t commandID = 0u;
         uint8_t targetAttIdx[4] = {0};
-        if (sscanf(extractedCmdLine, "ID.%hhu:ATT.%hhu,%hhu,%hhu,%hhu", &commandID, &targetAttIdx) != 5)
+        if (sscanf(extractedCmdLine, "ID.%hhu:ATT.%hhu,%hhu,%hhu,%hhu", &commandID, &targetAttIdx[0], &targetAttIdx[1], &targetAttIdx[2], &targetAttIdx[3]) != 5)
         {
             return MISSING_OR_INVALID_ATTRIBUTE;
         }
@@ -146,18 +147,17 @@ host_cmd_rc_e processExtractedCmdStr_Uart(char *extractedCmdLine,
             return MISSING_OR_INVALID_ATTRIBUTE;
         }
 
-        uint16_t commandPs1 = MakePSCommand(&processedHostCmd->requestedPhaseStates[1], 0b001); // first ps
-        uint16_t commandPs2 = MakePSCommand(&processedHostCmd->requestedPhaseStates[2], 0b010); // first ps
-        uint16_t commandPs3 = MakePSCommand(&processedHostCmd->requestedPhaseStates[3], 0b011); // first ps
-        uint16_t commandPs4 = MakePSCommand(&processedHostCmd->requestedPhaseStates[4], 0b100); // first ps
+        uint16_t commandPs1 = MakePSCommand(processedHostCmd->requestedPhaseStates[1], 0b001); // first ps
+        uint16_t commandPs2 = MakePSCommand(processedHostCmd->requestedPhaseStates[2], 0b010); // first ps
+        uint16_t commandPs3 = MakePSCommand(processedHostCmd->requestedPhaseStates[3], 0b011); // first ps
+        uint16_t commandPs4 = MakePSCommand(processedHostCmd->requestedPhaseStates[4], 0b100); // first ps
 
         spi_send(SPI2, commandPs4);
         spi_send(SPI2, commandPs3);
         spi_send(SPI2, commandPs2);
         spi_send(SPI2, commandPs1);
 
-        processedHostCmd->att = {0}; // initialize array to 0
-        // for unused attributes, store 0 in the extern struct
+        
         processedHostCmd->processingDone = true; // flag that processing is done
         return OK;
     } // line 163: closes the PS case
@@ -261,14 +261,9 @@ host_cmd_rc_e process_host_cmd_uart(uint8_t *process_buf_ptr, char *extractedCmd
 
 // except can DATA payload of 8 bytes if CAN message Identifier passes acceptance filters set up in
 // canSetUpAcceptanceFilters(CanTargetMcuMask_e canMCUId_Target)
-host_cmd_rc_e process_host_cmd_can(uint8_t *can_data_rx, uint32_t canId)
+host_cmd_rc_e process_host_cmd_can(uint8_t *can_data, uint32_t canId)
 {
 
-    if (!processedHostCmd.processingDone)
-    {
-        // we are waiting for previous command processing to finish
-        return LAST_COMMAND_PROCESSING_NOT_FINISHED;
-    }
     // Command type is carried in CAN ID bits 26-27 (see CanCommandId_e in beamformerCan.h).
     // Mask off every other ID bit (MCU filter bits, common bit) so only the command type is left.
     switch ((CanCommandId_e)(canId & CAN_CMD_TYPE_MASK))
@@ -280,10 +275,10 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data_rx, uint32_t canId)
         // MakePSCommand turns one 8-bit state into the 13-bit SPI word for one phase shifter.
         // PS addresses must match the A0-A3 strapping on RX4 or the chip ignores the word:
         // PS1 (U4) = 0, PS2 (U7) = 1, PS3 (U10) = 2, PS4 (U13) = 5 (A2 + A0).
-        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data_rx[0], 0b00000000); 
-        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data_rx[1], 0b00000001);
-        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data_rx[2], 0b00000010);
-        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data_rx[3], 0b00000101);
+        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data[0], 0b00000000); 
+        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data[1], 0b00000001);
+        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data[2], 0b00000010);
+        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data[3], 0b00000101);
         
         // RX4: each phase shifter has its own LE, so each one gets its own transaction:
         // send its word -> wait until SPI2 is done -> LE high -> LE low.
@@ -330,7 +325,7 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data_rx, uint32_t canId)
         // (divisible by 4 and <= 92) to catch malformed CAN data.
         for (int i = 0; i < 4; i++)
         {
-            uint8_t vga_byte = can_data_rx[4+i];
+            uint8_t vga_byte = can_data[4+i];
 
             if (vga_byte % 4 != 0 || vga_byte > VGA_MAX_ATTEN_BYTE){
                 return MISSING_OR_INVALID_ATTRIBUTE;
@@ -344,26 +339,26 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data_rx, uint32_t canId)
 
         //VGA1
         gpio_clear(SPI1_VGA1_CSB_PORT, SPI1_VGA1_CSB_PIN);
-        spi_send(SPI1, can_data_rx[4]);
+        spi_send(SPI1, can_data[4]);
         // wait for the byte to finish before raising CSB
         while (SPI_SR(SPI1) & SPI_SR_BSY);
         gpio_set(SPI1_VGA1_CSB_PORT, SPI1_VGA1_CSB_PIN);
 
         //VGA2
         gpio_clear(SPI1_VGA2_CSB_PORT, SPI1_VGA2_CSB_PIN);
-        spi_send(SPI1, can_data_rx[5]);
+        spi_send(SPI1, can_data[5]);
         while (SPI_SR(SPI1) & SPI_SR_BSY);
         gpio_set(SPI1_VGA2_CSB_PORT, SPI1_VGA2_CSB_PIN);
 
         //VGA3
         gpio_clear(SPI1_VGA3_CSB_PORT, SPI1_VGA3_CSB_PIN);
-        spi_send(SPI1, can_data_rx[6]);
+        spi_send(SPI1, can_data[6]);
         while (SPI_SR(SPI1) & SPI_SR_BSY);
         gpio_set(SPI1_VGA3_CSB_PORT, SPI1_VGA3_CSB_PIN);
 
         //VGA4
         gpio_clear(SPI1_VGA4_CSB_PORT, SPI1_VGA4_CSB_PIN);
-        spi_send(SPI1, can_data_rx[7]);
+        spi_send(SPI1, can_data[7]);
         while (SPI_SR(SPI1) & SPI_SR_BSY);
         gpio_set(SPI1_VGA4_CSB_PORT, SPI1_VGA4_CSB_PIN);
 
@@ -377,7 +372,7 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data_rx, uint32_t canId)
         // (PS bytes need no check: every 0-255 value is a valid state.)
         for (int i = 0; i < 4; i++)
         {
-            uint8_t vga_byte = can_data_rx[4+i];
+            uint8_t vga_byte = can_data[4+i];
 
             if (vga_byte % 4 != 0 || vga_byte > VGA_MAX_ATTEN_BYTE){
                 return MISSING_OR_INVALID_ATTRIBUTE;
@@ -386,10 +381,10 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data_rx, uint32_t canId)
 
         // PS addresses must match the A0-A3 strapping on RX4 or the chip ignores the word:
         // PS1 (U4) = 0, PS2 (U7) = 1, PS3 (U10) = 2, PS4 (U13) = 5 (A2 + A0).
-        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data_rx[0], 0b00000000); 
-        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data_rx[1], 0b00000001);
-        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data_rx[2], 0b00000010);
-        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data_rx[3], 0b00000101);
+        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data[0], 0b00000000); 
+        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data[1], 0b00000001);
+        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data[2], 0b00000010);
+        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data[3], 0b00000101);
         
         // Each phase shifter: send its word -> wait until SPI2 is done -> LE high -> LE low.
         // The LE pulse applies the word (see CAN_CMD_PHASE_SHIFTERS for timing).
@@ -423,26 +418,26 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data_rx, uint32_t canId)
         
         //VGA1
         gpio_clear(SPI1_VGA1_CSB_PORT, SPI1_VGA1_CSB_PIN);
-        spi_send(SPI1, can_data_rx[4]);
+        spi_send(SPI1, can_data[4]);
         // wait for the byte to finish before raising CSB
         while (SPI_SR(SPI1) & SPI_SR_BSY);
         gpio_set(SPI1_VGA1_CSB_PORT, SPI1_VGA1_CSB_PIN);
 
         //VGA2
         gpio_clear(SPI1_VGA2_CSB_PORT, SPI1_VGA2_CSB_PIN);
-        spi_send(SPI1, can_data_rx[5]);
+        spi_send(SPI1, can_data[5]);
         while (SPI_SR(SPI1) & SPI_SR_BSY);
         gpio_set(SPI1_VGA2_CSB_PORT, SPI1_VGA2_CSB_PIN);
 
         //VGA3
         gpio_clear(SPI1_VGA3_CSB_PORT, SPI1_VGA3_CSB_PIN);
-        spi_send(SPI1, can_data_rx[6]);
+        spi_send(SPI1, can_data[6]);
         while (SPI_SR(SPI1) & SPI_SR_BSY);
         gpio_set(SPI1_VGA3_CSB_PORT, SPI1_VGA3_CSB_PIN);
 
         //VGA4
         gpio_clear(SPI1_VGA4_CSB_PORT, SPI1_VGA4_CSB_PIN);
-        spi_send(SPI1, can_data_rx[7]);
+        spi_send(SPI1, can_data[7]);
         while (SPI_SR(SPI1) & SPI_SR_BSY);
         gpio_set(SPI1_VGA4_CSB_PORT, SPI1_VGA4_CSB_PIN);
 
