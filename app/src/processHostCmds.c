@@ -272,13 +272,15 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data, uint32_t canId)
     case (CAN_CMD_PHASE_SHIFTERS):
     {
         // Data format: bytes 0-3 = PS1-PS4 phase states (optimizedPhaseState_e), bytes 4-7 unused.
-        // MakePSCommand turns one 8-bit state into the 13-bit SPI word for one phase shifter.
+        // Each desired state (0-255) is looked up in ps_optimum_state to get the
+        // 9-bit word (OPT bit + phase) that is closest at 2.4 GHz, then MakePSCommand
+        // turns that into the 13-bit SPI word for one phase shifter.
         // PS addresses must match the A0-A3 strapping on RX4 or the chip ignores the word:
         // PS1 (U4) = 0, PS2 (U7) = 1, PS3 (U10) = 2, PS4 (U13) = 5 (A2 + A0).
-        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data[0], 0b00000000); 
-        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data[1], 0b00000001);
-        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data[2], 0b00000010);
-        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data[3], 0b00000101);
+        uint16_t commandps1 = MakePSCommand(ps_optimum_state[can_data[0]], 0b00000000); 
+        uint16_t commandps2 = MakePSCommand(ps_optimum_state[can_data[1]], 0b00000001);
+        uint16_t commandps3 = MakePSCommand(ps_optimum_state[can_data[2]], 0b00000010);
+        uint16_t commandps4 = MakePSCommand(ps_optimum_state[can_data[3]], 0b00000101);
         
         // RX4: each phase shifter has its own LE, so each one gets its own transaction:
         // send its word -> wait until SPI2 is done -> LE high -> LE low.
@@ -381,10 +383,10 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data, uint32_t canId)
 
         // PS addresses must match the A0-A3 strapping on RX4 or the chip ignores the word:
         // PS1 (U4) = 0, PS2 (U7) = 1, PS3 (U10) = 2, PS4 (U13) = 5 (A2 + A0).
-        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data[0], 0b00000000); 
-        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data[1], 0b00000001);
-        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data[2], 0b00000010);
-        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data[3], 0b00000101);
+        uint16_t commandps1 = MakePSCommand(ps_optimum_state[can_data[0]], 0b00000000); 
+        uint16_t commandps2 = MakePSCommand(ps_optimum_state[can_data[1]], 0b00000001);
+        uint16_t commandps3 = MakePSCommand(ps_optimum_state[can_data[2]], 0b00000010);
+        uint16_t commandps4 = MakePSCommand(ps_optimum_state[can_data[3]], 0b00000101);
         
         // Each phase shifter: send its word -> wait until SPI2 is done -> LE high -> LE low.
         // The LE pulse applies the word (see CAN_CMD_PHASE_SHIFTERS for timing).
