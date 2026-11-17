@@ -9,9 +9,9 @@
 #define CAN1_RX_PIN GPIO11
 #define CAN1_TX_PIN GPIO12
 
-extern volatile bool can_data_pending;
-extern uint8_t can_data_rx[8];
-extern volatile uint32_t can_id_rx;
+extern volatile bool can_data_pending; // set by the CAN ISR when a message arrives; main loop clears it
+extern uint8_t can_data_rx[8];         // data bytes of the last accepted CAN message (written by the CAN ISR)
+extern volatile uint32_t can_id_rx;    // ID of the last accepted CAN message; bits 26-27 = command type
 
 typedef enum
 {

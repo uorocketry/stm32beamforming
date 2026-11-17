@@ -278,115 +278,174 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data_rx, uint32_t canId)
     {
         // Data format: bytes 0-3 = PS1-PS4 phase states (optimizedPhaseState_e), bytes 4-7 unused.
         // MakePSCommand turns one 8-bit state into the 13-bit SPI word for one phase shifter.
-        // Second argument = unit address of the phase shifter (1-4).
-        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data_rx[0], 0b00000001); // expecting byte 0 is PS1 state
-        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data_rx[1], 0b00000010); // 1
-        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data_rx[2], 0b00000011); // 2
-        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data_rx[3], 0b00000100); // 3
-        spi_send(SPI2, commandps4);                                                             // send in reverse order because the first command will be pushed to the last phase shifter.
-        spi_send(SPI2, commandps3);
+        // PS addresses must match the A0-A3 strapping on RX4 or the chip ignores the word:
+        // PS1 (U4) = 0, PS2 (U7) = 1, PS3 (U10) = 2, PS4 (U13) = 5 (A2 + A0).
+        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data_rx[0], 0b00000000); 
+        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data_rx[1], 0b00000001);
+        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data_rx[2], 0b00000010);
+        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data_rx[3], 0b00000101);
+        
+        // RX4: each phase shifter has its own LE, so each one gets its own transaction:
+        // send its word -> wait until SPI2 is done -> LE high -> LE low.
+        // PE44820: LE must rise >= 10 ns after the last clock (the BSY wait covers this)
+        // and stay high >= 30 ns (one gpio call at 48 MHz is longer than that).
+
+        //PS1
+        spi_send(SPI2, commandps1); 
+        while (SPI_SR(SPI2) & SPI_SR_BSY);
+        gpio_set(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
+        gpio_clear(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
+
+        //PS2
         spi_send(SPI2, commandps2);
-        spi_send(SPI2, commandps1);
+        while (SPI_SR(SPI2) & SPI_SR_BSY);
+        gpio_set(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
+        gpio_clear(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
+        
+        //PS3
+        spi_send(SPI2, commandps3); 
+        while (SPI_SR(SPI2) & SPI_SR_BSY);
+        gpio_set(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
+        gpio_clear(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
+
+        //PS4
+        spi_send(SPI2, commandps4);  
+        while (SPI_SR(SPI2) & SPI_SR_BSY);
+        gpio_set(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN);
+        gpio_clear(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN);
+
         return OK;
     }
     case (CAN_CMD_VGA):
     {
-        // Data format: bytes 4-7 = VGA1-VGA4 raw attenuation values (SupportedAttenuationCommand_e),
+        // Data format: bytes 4-7 = VGA1-VGA4 
         // Uses bytes 4-7 only (VGA1-VGA4). Bytes 0-3 ignored.
         // The attenuation value is already the 8-bit SPI word, so no builder function is needed.
 
-        // Check all 4 values before sending any, so a bad byte can't leave the VGAs half-updated.
+        // Check all 4 VGA bytes before sending any, so a bad byte can't
+        // leave the VGAs half-updated.
+        // The F0480 reads bits 6-2 as the attenuation in dB (0-23); bits 7, 1
+        // and 0 are don't-care. The chip doesn't require them to be 0, but the
+        // Pi always sends them as 0 (design choice), so we only accept clean encodings
+        // (divisible by 4 and <= 92) to catch malformed CAN data.
         for (int i = 0; i < 4; i++)
         {
-            switch (can_data_rx[4 + i])
-            {
-            case ATTEN_0DB:
-                break;
-            case ATTEN_1DB:
-                break;
-            case ATTEN_2DB:
-                break;
-            case ATTEN_4DB:
-                break;
-            case ATTEN_8DB:
-                break;
-            case ATTEN_16DB:
-                break;
-            case ATTEN_22DB:
-                break;
-            case ATTEN_23DB:
-                break;
-            default:
+            uint8_t vga_byte = can_data_rx[4+i];
+
+            if (vga_byte % 4 != 0 || vga_byte > VGA_MAX_ATTEN_BYTE){
                 return MISSING_OR_INVALID_ATTRIBUTE;
             }
         }
-        // ASSUMPTION (to be confirmed): the 4 VGAs are daisy-chained on one shared CSB (PA4),
-        // with VGA1 closest to the STM32. Like the phase shifters, the first byte sent is pushed
-        // to the far end, so send VGA4 first and VGA1 last.
+        // RX4: each VGA has its own CSB, so each one gets its own transaction:
+        // CSB low -> send its byte -> wait until SPI1 is done -> CSB high.
+        // spi_send returns before the bits leave the pin, so we must wait on
+        // the BSY flag before raising CSB, or the VGA gets a cut-off byte.
+        // Byte 4 = VGA1 (PC0) ... byte 7 = VGA4 (PC3).
 
-        gpio_clear(SPI1_VGA_CSB_PORT, SPI1_VGA_CSB_PIN); // CSB low: VGAs clock in data
-        spi_send(SPI1, can_data_rx[7]);
-        spi_send(SPI1, can_data_rx[6]);
-        spi_send(SPI1, can_data_rx[5]);
+        //VGA1
+        gpio_clear(SPI1_VGA1_CSB_PORT, SPI1_VGA1_CSB_PIN);
         spi_send(SPI1, can_data_rx[4]);
-
-        // spi_send returns before the last bits leave the pin.
-        // Wait until SPI1 is no longer busy, or raising CSB would cut off the last byte.
+        // wait for the byte to finish before raising CSB
         while (SPI_SR(SPI1) & SPI_SR_BSY);
+        gpio_set(SPI1_VGA1_CSB_PORT, SPI1_VGA1_CSB_PIN);
 
-        gpio_set(SPI1_VGA_CSB_PORT, SPI1_VGA_CSB_PIN); // CSB high: VGAs stop clocking in data
+        //VGA2
+        gpio_clear(SPI1_VGA2_CSB_PORT, SPI1_VGA2_CSB_PIN);
+        spi_send(SPI1, can_data_rx[5]);
+        while (SPI_SR(SPI1) & SPI_SR_BSY);
+        gpio_set(SPI1_VGA2_CSB_PORT, SPI1_VGA2_CSB_PIN);
+
+        //VGA3
+        gpio_clear(SPI1_VGA3_CSB_PORT, SPI1_VGA3_CSB_PIN);
+        spi_send(SPI1, can_data_rx[6]);
+        while (SPI_SR(SPI1) & SPI_SR_BSY);
+        gpio_set(SPI1_VGA3_CSB_PORT, SPI1_VGA3_CSB_PIN);
+
+        //VGA4
+        gpio_clear(SPI1_VGA4_CSB_PORT, SPI1_VGA4_CSB_PIN);
+        spi_send(SPI1, can_data_rx[7]);
+        while (SPI_SR(SPI1) & SPI_SR_BSY);
+        gpio_set(SPI1_VGA4_CSB_PORT, SPI1_VGA4_CSB_PIN);
+
         return OK;
     }
     case (CAN_CMD_COMBINED):
     {
-        // Uses all 8 bytes.
+        // Data format: bytes 0-3 = PS1-PS4 phase states, bytes 4-7 = VGA1-VGA4
         // Check the VGA bytes before sending anything, so a bad byte can't leave
-        // the phase shifters updated but the VGAs not. (PS bytes need no check: every 0-255 value is a valid state.)
+        // the phase shifters updated but the VGAs not.
+        // (PS bytes need no check: every 0-255 value is a valid state.)
         for (int i = 0; i < 4; i++)
         {
-            switch (can_data_rx[4 + i])
-            {
-            case ATTEN_0DB:
-                break;
-            case ATTEN_1DB:
-                break;
-            case ATTEN_2DB:
-                break;
-            case ATTEN_4DB:
-                break;
-            case ATTEN_8DB:
-                break;
-            case ATTEN_16DB:
-                break;
-            case ATTEN_22DB:
-                break;
-            case ATTEN_23DB:
-                break;
-            default:
+            uint8_t vga_byte = can_data_rx[4+i];
+
+            if (vga_byte % 4 != 0 || vga_byte > VGA_MAX_ATTEN_BYTE){
                 return MISSING_OR_INVALID_ATTRIBUTE;
             }
         }
 
-        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data_rx[0], 0b00000001); // expecting byte 0 is PS1 state
-        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data_rx[1], 0b00000010); // byte 1 PS2
-        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data_rx[2], 0b00000011); // byte 2 PS3
-        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data_rx[3], 0b00000100); // byte 3 PS4
-        spi_send(SPI2, commandps4);                                                             // send in reverse order because the first command will be pushed to the last phase shifter.
-        spi_send(SPI2, commandps3);
+        // PS addresses must match the A0-A3 strapping on RX4 or the chip ignores the word:
+        // PS1 (U4) = 0, PS2 (U7) = 1, PS3 (U10) = 2, PS4 (U13) = 5 (A2 + A0).
+        uint16_t commandps1 = MakePSCommand((optimizedPhaseState_e)can_data_rx[0], 0b00000000); 
+        uint16_t commandps2 = MakePSCommand((optimizedPhaseState_e)can_data_rx[1], 0b00000001);
+        uint16_t commandps3 = MakePSCommand((optimizedPhaseState_e)can_data_rx[2], 0b00000010);
+        uint16_t commandps4 = MakePSCommand((optimizedPhaseState_e)can_data_rx[3], 0b00000101);
+        
+        // Each phase shifter: send its word -> wait until SPI2 is done -> LE high -> LE low.
+        // The LE pulse applies the word (see CAN_CMD_PHASE_SHIFTERS for timing).
+
+        //PS1
+        spi_send(SPI2, commandps1); 
+        while (SPI_SR(SPI2) & SPI_SR_BSY);
+        gpio_set(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
+        gpio_clear(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
+
+        //PS2
         spi_send(SPI2, commandps2);
-        spi_send(SPI2, commandps1);
+        while (SPI_SR(SPI2) & SPI_SR_BSY);
+        gpio_set(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
+        gpio_clear(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
+        
+        //PS3
+        spi_send(SPI2, commandps3); 
+        while (SPI_SR(SPI2) & SPI_SR_BSY);
+        gpio_set(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
+        gpio_clear(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
 
-        gpio_clear(SPI1_VGA_CSB_PORT, SPI1_VGA_CSB_PIN); // CSB low: VGAs clock in data
-        spi_send(SPI1, can_data_rx[7]);
-        spi_send(SPI1, can_data_rx[6]);
-        spi_send(SPI1, can_data_rx[5]);
+        //PS4
+        spi_send(SPI2, commandps4);  
+        while (SPI_SR(SPI2) & SPI_SR_BSY);
+        gpio_set(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN);
+        gpio_clear(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN);
+
+        // Each VGA: CSB low -> send its byte -> wait until SPI1 is done -> CSB high.
+        // Byte 4 = VGA1 (PC0) ... byte 7 = VGA4 (PC3).
+        
+        //VGA1
+        gpio_clear(SPI1_VGA1_CSB_PORT, SPI1_VGA1_CSB_PIN);
         spi_send(SPI1, can_data_rx[4]);
-
-        // spi_send returns before the last bits leave the pin.
-        // Wait until SPI1 is no longer busy, or raising CSB would cut off the last byte.
+        // wait for the byte to finish before raising CSB
         while (SPI_SR(SPI1) & SPI_SR_BSY);
+        gpio_set(SPI1_VGA1_CSB_PORT, SPI1_VGA1_CSB_PIN);
 
-        gpio_set(SPI1_VGA_CSB_PORT, SPI1_VGA_CSB_PIN); // CSB high: VGAs stop clocking in data
+        //VGA2
+        gpio_clear(SPI1_VGA2_CSB_PORT, SPI1_VGA2_CSB_PIN);
+        spi_send(SPI1, can_data_rx[5]);
+        while (SPI_SR(SPI1) & SPI_SR_BSY);
+        gpio_set(SPI1_VGA2_CSB_PORT, SPI1_VGA2_CSB_PIN);
+
+        //VGA3
+        gpio_clear(SPI1_VGA3_CSB_PORT, SPI1_VGA3_CSB_PIN);
+        spi_send(SPI1, can_data_rx[6]);
+        while (SPI_SR(SPI1) & SPI_SR_BSY);
+        gpio_set(SPI1_VGA3_CSB_PORT, SPI1_VGA3_CSB_PIN);
+
+        //VGA4
+        gpio_clear(SPI1_VGA4_CSB_PORT, SPI1_VGA4_CSB_PIN);
+        spi_send(SPI1, can_data_rx[7]);
+        while (SPI_SR(SPI1) & SPI_SR_BSY);
+        gpio_set(SPI1_VGA4_CSB_PORT, SPI1_VGA4_CSB_PIN);
+
         return OK;
     }
     default:

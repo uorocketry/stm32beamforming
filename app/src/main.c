@@ -28,8 +28,7 @@ switch on the first 3 bits of the command
 #include <include/ProcessHostCmds.h>
 #include <include/beamformerCan.h>
 
-extern volatile bool can_data_pending; //flag for main loop
-extern uint8_t can_data_rx[8]; //populated by CAN ISR when can message passes acceptance filters set for this mcu 
+
 
 
 int main(void)
@@ -56,7 +55,6 @@ int main(void)
    //spisend(SPI1, attenuationCmd); //vga
 
 
-    gpio_clear(SPI2_PS_LE_PORT, SPI2_PS_LE_PIN);
 
     while (1)
     {

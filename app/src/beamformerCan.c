@@ -96,7 +96,7 @@ void canSetUpAcceptanceFilters(CanTargetMcuMask_e canTargetMcuMaskSelf)
         0,                  // filter bank 0 
         self_filter_id,    // filter ID
         self_filter_mask,  // mask
-        CAN_FIFO0,         // route to the first receive FIFO
+        0,                 // FIFO number 0 (not libopencm3's CAN_FIFO0, which is a register offset 0x1B0)
         true               // enable
     );
 
@@ -104,7 +104,7 @@ void canSetUpAcceptanceFilters(CanTargetMcuMask_e canTargetMcuMaskSelf)
         1,                  // filter bank 1
         common_filter_id,  // filter ID
         common_filter_mask,// mask
-        CAN_FIFO0,         // route to the first receive FIFO
+        0,                 // FIFO number 0
         true               // enable
     );
     can_enable_irq(CAN1, CAN_IER_FMPIE0);
@@ -113,11 +113,11 @@ void canSetUpAcceptanceFilters(CanTargetMcuMask_e canTargetMcuMaskSelf)
 
 void cec_can_isr(void)
 {
-    while (can_fifo_pending(CAN1, CAN_FIFO0) > 0) {
+    while (can_fifo_pending(CAN1, 0) > 0) {
         //check acceptance fitlers success 
         can_receive(
             CAN1,
-            CAN_FIFO0,
+            0,
             true,      // release FIFO after reading
             &unprocessedCanCmd.id, 
             &unprocessedCanCmd.ext,
