@@ -56,6 +56,7 @@ Example Format: ID.2:PS_IDX.1,6,7,8:ATT.1 //PS_IDXs map to phaseState_e enum ind
 
 // Parses one UART command line and sends it to the chips.
 // static: only called by process_host_cmd_uart in this file.
+/*
 static host_cmd_rc_e processExtractedCmdStr_Uart(char *extractedCmdLine,
                                           processedHostCmd_t *processedHostCmd)
 {
@@ -72,10 +73,10 @@ static host_cmd_rc_e processExtractedCmdStr_Uart(char *extractedCmdLine,
     {
     case HOST_CMD_VGA:
     {
-        /* VGA command expected format: ID.0:ATT.23
-         *attenuation passed by host as a character, but we want it as an integer. extract the char, interpret as int type, and then switch to supported attenuation cmd
-         *only the supported values can be processed
-         */
+        //VGA command expected format: ID.0:ATT.23
+        //attenuation passed by host as a character, but we want it as an integer. extract the char, interpret as int type, and then switch to supported attenuation cmd
+        //only the supported values can be processed
+        
         uint8_t commandID = 0u;
         uint8_t targetAttIdx[4] = {0};
         if (sscanf(extractedCmdLine, "ID.%hhu:ATT.%hhu,%hhu,%hhu,%hhu", &commandID, &targetAttIdx[0], &targetAttIdx[1], &targetAttIdx[2], &targetAttIdx[3]) != 5)
@@ -258,6 +259,7 @@ host_cmd_rc_e process_host_cmd_uart(uint8_t *process_buf_ptr, char *extractedCmd
     memset(buf_start, 0, DMA_MAX_RX_CMD_LENGTH);
     return processExtractedCmdStr_Uart(extractedCmdLine, processedHostCmd);
 }
+*/
 
 // except can DATA payload of 8 bytes if CAN message Identifier passes acceptance filters set up in
 // canSetUpAcceptanceFilters(CanTargetMcuMask_e canMCUId_Target)
@@ -387,7 +389,6 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data, uint32_t canId)
         uint16_t commandps2 = MakePSCommand(ps_optimum_state[can_data[1]], 0b00000001);
         uint16_t commandps3 = MakePSCommand(ps_optimum_state[can_data[2]], 0b00000010);
         uint16_t commandps4 = MakePSCommand(ps_optimum_state[can_data[3]], 0b00000101);
-        
         // Each phase shifter: send its word -> wait until SPI2 is done -> LE high -> LE low.
         // The LE pulse applies the word (see CAN_CMD_PHASE_SHIFTERS for timing).
 

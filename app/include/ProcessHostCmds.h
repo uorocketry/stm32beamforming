@@ -65,7 +65,7 @@ typedef struct {
 } processedHostCmd_t;
 
 
-host_cmd_rc_e process_host_cmd_uart(uint8_t *buf, char *extractedCmdLine, processedHostCmd_t *processedHostCmd);
+//host_cmd_rc_e process_host_cmd_uart(uint8_t *buf, char *extractedCmdLine, processedHostCmd_t *processedHostCmd);
 
 host_cmd_rc_e  processExtractedCmdStr_uart(char *extractedCmdLine,
                                                 processedHostCmd_t *processedHostCmd);
