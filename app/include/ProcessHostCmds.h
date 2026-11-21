@@ -58,7 +58,7 @@ If an attribute is not expected given the command ID, it takes a default "NULL" 
 typedef struct {
     hostCmdId_e CommandId;
     SupportedAttenuationCommand_t att; //attenuation level, vga command attribute.
-    phaseState_e requestedPhaseStates[4]; 
+    optimizedPhaseState_e requestedPhaseStates[4]; 
     uint8_t optBit; //opt bit, phase shift cmd attribute. 
     uint8_t unit; //unit address, phase shift cmd attribute.
     bool processingDone; 
@@ -71,6 +71,6 @@ host_cmd_rc_e process_host_cmd_uart(uint8_t *buf, char *extractedCmdLine, proces
 host_cmd_rc_e  processExtractedCmdStr_uart(char *extractedCmdLine,
                                                 processedHostCmd_t *processedHostCmd);
 
-host_cmd_rc_e process_host_cmd_can(uint8_t *canData);
+host_cmd_rc_e process_host_cmd_can(uint8_t *canData, uint32_t canId);
 
 #endif

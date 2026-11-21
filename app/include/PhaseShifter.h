@@ -12,15 +12,30 @@
 #include <include/PhaseStateEnum.h>
 
 
+// RX4: each phase shifter has its own latch enable (LE).
+// Data shifts in while LE is low; a high pulse on LE applies it.
+// Pins from the RX4 MCU schematic. They count DOWN on purpose
+// (PS1 = PB10, PS4 = PB0); this is not a typo.
+#define SPI2_PS1_LE_PORT GPIOB
+#define SPI2_PS1_LE_PIN GPIO10 
 
-#define SPI2_PS_LE_PORT GPIOB//treat the LE signal as the chip select 
-#define SPI2_PS_LE_PIN GPIO12 
+#define SPI2_PS2_LE_PORT GPIOB
+#define SPI2_PS2_LE_PIN GPIO2 
 
+#define SPI2_PS3_LE_PORT GPIOB
+#define SPI2_PS3_LE_PIN GPIO1 
+
+#define SPI2_PS4_LE_PORT GPIOB
+#define SPI2_PS4_LE_PIN GPIO0 
+
+// Serial/parallel select, shared by all 4 phase shifters.
+// Must be HIGH so the chips are programmed over SPI (serial mode).
 #define SPI2_PS_SP_PORT GPIOC
-#define SPI2_PS_SP_PIN GPIO10
+#define SPI2_PS_SP_PIN GPIO4
 
-#define SPI2_PS_MISO_PORT GPIOC
-#define SPI2_PS_MISO_PIN GPIO11//(SD01, d6 on PS side)
+// SPI2 clock and data to the phase shifters.
+// No MISO: the phase shifters never send data back, and on RX4
+// PC11 (the old MISO pin) is wired to the power setpoints instead.
 #define SPI2_PS_CLK_PORT GPIOB
 #define SPI2_PS_CLK_PIN GPIO13
 
