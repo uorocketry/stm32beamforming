@@ -43,6 +43,7 @@
 #define SPI2_PS_MOSI_PIN GPIO15
 
 uint16_t reverseBits(uint16_t word, uint8_t numBits);
-uint16_t MakePSCommand(optimizedPhaseState_e phaseState, uint8_t unitAddressWord);
+uint16_t MakePSCommand(uint16_t stateword, uint8_t unitAddressWord);
+extern const uint16_t ps_optimum_state[256];
 void pe448spisetup(void);
 #endif
