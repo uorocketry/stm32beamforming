@@ -285,29 +285,33 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data, uint32_t canId)
         uint16_t commandps4 = MakePSCommand(ps_optimum_state[can_data[3]], 0b00000101);
         
         // RX4: each phase shifter has its own LE, so each one gets its own transaction:
-        // send its word -> wait until SPI2 is done -> LE high -> LE low.
+        // LE low -> send its word -> wait until SPI2 is done -> LE high -> LE low.
         // PE44820: LE must rise >= 10 ns after the last clock (the BSY wait covers this)
         // and stay high >= 30 ns (one gpio call at 48 MHz is longer than that).
 
         //PS1
+        gpio_clear(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN); // LE low before shifting
         spi_send(SPI2, commandps1); 
         while (SPI_SR(SPI2) & SPI_SR_BSY);
         gpio_set(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
         gpio_clear(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
 
         //PS2
+        gpio_clear(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN); // LE low before shifting
         spi_send(SPI2, commandps2);
         while (SPI_SR(SPI2) & SPI_SR_BSY);
         gpio_set(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
         gpio_clear(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
         
         //PS3
+        gpio_clear(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN); // LE low before shifting
         spi_send(SPI2, commandps3); 
         while (SPI_SR(SPI2) & SPI_SR_BSY);
         gpio_set(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
         gpio_clear(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
 
         //PS4
+        gpio_clear(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN); // LE low before shifting
         spi_send(SPI2, commandps4);  
         while (SPI_SR(SPI2) & SPI_SR_BSY);
         gpio_set(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN);
@@ -389,28 +393,33 @@ host_cmd_rc_e process_host_cmd_can(uint8_t *can_data, uint32_t canId)
         uint16_t commandps2 = MakePSCommand(ps_optimum_state[can_data[1]], 0b00000001);
         uint16_t commandps3 = MakePSCommand(ps_optimum_state[can_data[2]], 0b00000010);
         uint16_t commandps4 = MakePSCommand(ps_optimum_state[can_data[3]], 0b00000101);
-        // Each phase shifter: send its word -> wait until SPI2 is done -> LE high -> LE low.
+        
+        // Each phase shifter: LE low -> send its word -> wait until SPI2 is done -> LE high -> LE low.
         // The LE pulse applies the word (see CAN_CMD_PHASE_SHIFTERS for timing).
 
         //PS1
+        gpio_clear(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN); // LE low before shifting
         spi_send(SPI2, commandps1); 
         while (SPI_SR(SPI2) & SPI_SR_BSY);
         gpio_set(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
         gpio_clear(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
 
         //PS2
+        gpio_clear(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN); // LE low before shifting
         spi_send(SPI2, commandps2);
         while (SPI_SR(SPI2) & SPI_SR_BSY);
         gpio_set(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
         gpio_clear(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
         
         //PS3
+        gpio_clear(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN); // LE low before shifting
         spi_send(SPI2, commandps3); 
         while (SPI_SR(SPI2) & SPI_SR_BSY);
         gpio_set(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
         gpio_clear(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
 
         //PS4
+        gpio_clear(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN); // LE low before shifting
         spi_send(SPI2, commandps4);  
         while (SPI_SR(SPI2) & SPI_SR_BSY);
         gpio_set(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN);
