@@ -16,7 +16,7 @@ uint16_t reverseBits(uint16_t word, uint8_t numBits)
     return reversed;
 }
 
-uint16_t MakePSCommand(phaseState_e stateword, uint8_t unitAddressWord)
+uint16_t MakePSCommand(optimizedPhaseState_e stateword, uint8_t unitAddressWord)
 {
     //[reversedStateWOrd][optBit][reversedAddress]
     
@@ -32,26 +32,44 @@ uint16_t MakePSCommand(phaseState_e stateword, uint8_t unitAddressWord)
 void pe448spisetup(void)
 {
     rcc_periph_clock_enable(RCC_SPI2);
-    rcc_periph_clock_enable(RCC_GPIOA); 
-    rcc_periph_clock_enable(RCC_GPIOB); //for CLK, MOSI, and LE
-    rcc_periph_clock_enable(RCC_GPIOC); //for MISO and SP (serial progrmaming select pin)
+    rcc_periph_clock_enable(RCC_GPIOB); // CLK (PB13), MOSI (PB15), LE1-4 (PB10, PB2, PB1, PB0)
+    rcc_periph_clock_enable(RCC_GPIOC); // S/P (PC4)
 
-    gpio_mode_setup(SPI2_PS_SP_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI2_PS_SP_PIN); 
-    gpio_set(SPI2_PS_SP_PORT, SPI2_PS_SP_PIN); //PS SP pin HIGH for serial communication  
+    // S/P must be HIGH for serial mode. Set it before making it an output
+    // so it never briefly selects parallel mode at startup.
+    gpio_set(SPI2_PS_SP_PORT, SPI2_PS_SP_PIN);
+    gpio_mode_setup(SPI2_PS_SP_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI2_PS_SP_PIN);
 
-    //now set the pin modes as outputs and AF 
-    gpio_mode_setup(SPI2_PS_CLK_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI2_PS_CLK_PIN); 
-    gpio_mode_setup(SPI2_PS_MISO_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI2_PS_MISO_PIN); 
-    gpio_mode_setup(SPI2_PS_MOSI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI2_PS_MOSI_PIN); 
+    // CLK (PB13) and MOSI (PB15) are driven by the SPI2 hardware: AF mode, AF0
+    // (STM32F072 datasheet DS9826 Rev 6, Table 16).
+    // No MISO: the phase shifters never send data back.
+    gpio_mode_setup(SPI2_PS_CLK_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI2_PS_CLK_PIN);
+    gpio_mode_setup(SPI2_PS_MOSI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI2_PS_MOSI_PIN);
+    gpio_set_af(SPI2_PS_CLK_PORT, GPIO_AF0, SPI2_PS_CLK_PIN);
+    gpio_set_af(SPI2_PS_MOSI_PORT, GPIO_AF0, SPI2_PS_MOSI_PIN);
 
-    //set latch enable (CS) as general output, Alternate functions for SPI bus lines
-    gpio_mode_setup(SPI2_PS_LE_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI2_PS_LE_PIN);  
-    gpio_set_af(SPI2_PS_CLK_PORT, GPIO_AF0, SPI2_PS_CLK_PIN); 
-    gpio_set_af(SPI2_PS_MOSI_PORT, GPIO_AF0, SPI2_PS_MOSI_PIN); 
-    gpio_set_af(SPI2_PS_MISO_PORT, GPIO_AF0, SPI2_PS_MISO_PIN); 
+    // Each phase shifter has its own LE. They must start LOW: a rising edge
+    // on LE applies whatever is in the chip's shift register, which is
+    // garbage at power-up. Clear before making them outputs, same reason as S/P.
 
-    spi_set_data_size(SPI2, SPI_CR2_DS_13BIT); //our command is 13 bits long. 
+    //PS1
+    gpio_clear(SPI2_PS1_LE_PORT, SPI2_PS1_LE_PIN);
+    gpio_mode_setup(SPI2_PS1_LE_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI2_PS1_LE_PIN);
+
+    //PS2
+    gpio_clear(SPI2_PS2_LE_PORT, SPI2_PS2_LE_PIN);
+    gpio_mode_setup(SPI2_PS2_LE_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI2_PS2_LE_PIN);
+
+    //PS3
+    gpio_clear(SPI2_PS3_LE_PORT, SPI2_PS3_LE_PIN);
+    gpio_mode_setup(SPI2_PS3_LE_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI2_PS3_LE_PIN);
+
+    //PS4
+    gpio_clear(SPI2_PS4_LE_PORT, SPI2_PS4_LE_PIN);
+    gpio_mode_setup(SPI2_PS4_LE_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, SPI2_PS4_LE_PIN);
+
+    
+    spi_set_data_size(SPI2, SPI_CR2_DS_13BIT); //our command is 13 bits long.
     spi_fifo_reception_threshold_16bit(SPI2);
     spi_init_master(SPI2, SPI_CR1_BAUDRATE_FPCLK_DIV_16, 0, 0, SPI_CR1_MSBFIRST); //send MSB first. We've already flipped the command elements to LSB first as required during command construction. 
-    
 }
