@@ -8,7 +8,6 @@ CFILES += src/PinToggle.c
 CFILES += src/phaseShifter.c
 CFILES += src/vga.c
 CFILES += src/beamformerCan.c
-CFILES += src/processHostCmds.c
 CFILES += src/UnitTests/RX1UnitTests.c
 HFILES += include/Vga.h
 HFILES += include/PhaseShifter.h
