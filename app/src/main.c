@@ -6,49 +6,40 @@
 #include <stdint.h>
 #include <libopencm3/stm32/timer.h>
 #include <stdbool.h>
+#include <include/ProcessHostCmds.h>
+#include <include/beamformerCan.h>
 
-void hard_fault_handler(void) { 
-
-    // Hard Fault Status Register
-    volatile uint32_t hfsr = *(uint32_t *)0xE000ED2C;
-    
-    // Configurable Fault Status Register
-    volatile uint32_t cfsr = *(uint32_t *)0xE000ED28;
-    volatile uint8_t  mmfsr = cfsr & 0xFF; //Memory Management Fault Status
-    volatile uint8_t  bfsr  = (cfsr >> 8) & 0xFF; //Bus Fault status 
-    volatile uint16_t ufsr  = (cfsr >> 16); //Usage Fault Status Reg 
-    
-    // Fault Address Registers
-    volatile uint32_t mmar = *(uint32_t *)0xE000ED34; //MemManage Fault Address
-    volatile uint32_t bfar = *(uint32_t *)0xE000ED38; //Bus Fault Address
-    
-    // Debug Fault Status Register
-    volatile uint32_t dfsr = *(uint32_t *)0xE000ED30;
-    
-    __asm__("bkpt #0");
-
-    while(1);
-}
-// Inspect in gdb: p/x hfsr, p/x cfsr, p/x mmfsr, p/x bfsr, p/x ufsr, p/x mmar, p/x bfar, p/x dfsr
 
 
 
 int main(void)
 {
-    rcc_clock_setup_in_hse_8mhz_out_48mhz(); 
-    pe448spisetup();                                   
+    rcc_clock_setup_in_hsi_out_48mhz(); 
+    pe448spisetup(); //phase shifter spi setup connected to this device
+    f0480spisetup();//vga spi setup
+                                    
     spi_enable(SPI2);
+    spi_enable(SPI1);
 
-    //create command 
-    uint16_t command = MakePSCommand(205.3f, 0, (uint8_t)0b0011); //requested shift of 205.3 degrees, opt bit 0, unit address 0b0011
+    // No UART on RX4: the RX1 RS485 pins (PB6, PB7, PC11, PC12) are STBY,
+    // unconnected and power setpoints on this board. Do NOT call init_uart_rx();
+    // it would hand PB6 (STBY) to USART1, which idles HIGH and puts the VGAs in standby.
 
-    gpio_clear(SPI2_PS_LE_PORT, SPI2_PS_LE_PIN);
+    canSetUpClocks(); 
+    canSetUpAcceptanceFilters(CAN_FILTER_MCU1_MASK); //if this is self 
+
+
+
     while (1)
-    { //set the cs low
-        spi_send(SPI2, command);
-        // phaseShifterResponse =spi_read(SPI2);
-        gpio_set(SPI2_PS_LE_PORT, SPI2_PS_LE_PIN); 
-        break;
+    {
+        // Can message received and passed acceptance filters
+        if (can_data_pending) {
+            can_data_pending = false; //clear
+            process_host_cmd_can(can_data_rx, can_id_rx);
+
+        }
+        
+
     }
     
     while(1);
